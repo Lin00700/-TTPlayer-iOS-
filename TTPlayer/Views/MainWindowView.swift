@@ -181,7 +181,10 @@ struct MainWindowView: View {
             )
             .padding(.horizontal, 8)
             .padding(.vertical, 7)
-            .allowsHitTesting(false)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                player.cycleVisualMode()
+            }
 
             VStack(spacing: 0) {
                 HStack(spacing: 0) {
@@ -212,10 +215,6 @@ struct MainWindowView: View {
             RoundedRectangle(cornerRadius: 7, style: .continuous)
                 .strokeBorder(theme.lcdBorder.opacity(0.55), lineWidth: 1)
         )
-        .contentShape(Rectangle())
-        .onTapGesture {
-            player.cycleVisualMode()
-        }
     }
 
     private var visualModePill: some View {

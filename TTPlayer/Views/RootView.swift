@@ -55,9 +55,10 @@ struct RootView: View {
         let playlistMin: CGFloat = 236
         let playlistFloor: CGFloat = 200         // 低于这个高度就让整屏滚动，播放列表回到固定高度
 
-        let free = max(0, usable - mainEstimate - spacing * 2)   // 歌词 + 播放列表 可用的高度
-        let lyricsHeight = min(lyricsCeiling, max(lyricsFloor, free - playlistMin))
-        let lyricsChrome = player.showLyricsPanel ? lyricsHeight : 27
+        let free = max(0, usable - mainEstimate - spacing * 2)   // 歌词窗口 + 播放列表窗口 可用的高度
+        let lyricsTitleBar: CGFloat = 27
+        let lyricsHeight = min(lyricsCeiling, max(lyricsFloor, free - playlistMin - lyricsTitleBar))
+        let lyricsChrome = player.showLyricsPanel ? lyricsHeight + lyricsTitleBar : lyricsTitleBar
         let playlistSpace = free - lyricsChrome
         let fills = playlistSpace >= playlistFloor
 
