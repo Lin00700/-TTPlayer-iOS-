@@ -12,6 +12,41 @@ struct PlayerSettings: Codable {
     var lyricOffsets: [String: Double] = [:]
     var showLyricsPanel: Bool = true
     var showPlaylistPanel: Bool = true
+    var visualMode: VisualMode = .spectrum
+
+    init(
+        skin: SkinStyle = .classic,
+        volume: Double = 0.85,
+        repeatMode: RepeatMode = .list,
+        equalizer: EqualizerSettings = .default,
+        lyricOffsets: [String: Double] = [:],
+        showLyricsPanel: Bool = true,
+        showPlaylistPanel: Bool = true,
+        visualMode: VisualMode = .spectrum
+    ) {
+        self.skin = skin
+        self.volume = volume
+        self.repeatMode = repeatMode
+        self.equalizer = equalizer
+        self.lyricOffsets = lyricOffsets
+        self.showLyricsPanel = showLyricsPanel
+        self.showPlaylistPanel = showPlaylistPanel
+        self.visualMode = visualMode
+    }
+
+    /// 旧版本的 library.json 没有 visualMode 这些新字段，逐项容错，
+    /// 别因为一个键缺失把整份曲库与设置都丢掉
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        skin = try container.decodeIfPresent(SkinStyle.self, forKey: .skin) ?? .classic
+        volume = try container.decodeIfPresent(Double.self, forKey: .volume) ?? 0.85
+        repeatMode = try container.decodeIfPresent(RepeatMode.self, forKey: .repeatMode) ?? .list
+        equalizer = try container.decodeIfPresent(EqualizerSettings.self, forKey: .equalizer) ?? .default
+        lyricOffsets = try container.decodeIfPresent([String: Double].self, forKey: .lyricOffsets) ?? [:]
+        showLyricsPanel = try container.decodeIfPresent(Bool.self, forKey: .showLyricsPanel) ?? true
+        showPlaylistPanel = try container.decodeIfPresent(Bool.self, forKey: .showPlaylistPanel) ?? true
+        visualMode = try container.decodeIfPresent(VisualMode.self, forKey: .visualMode) ?? .spectrum
+    }
 }
 
 struct LibrarySnapshot: Codable {

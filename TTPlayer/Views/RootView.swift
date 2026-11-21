@@ -10,17 +10,9 @@ struct RootView: View {
             background
             VStack(spacing: 0) {
                 header
-                ScrollView(.vertical, showsIndicators: false) {
-                    VStack(spacing: 10) {
-                        MainWindowView()
-                        LyricsWindowView()
-                        PlaylistWindowView()
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.top, 6)
-                    .padding(.bottom, 34)
+                GeometryReader { geo in
+                    layout(size: geo.size)
                 }
-                .scrollDismissesKeyboard(.interactively)
             }
         }
         .sheet(isPresented: $player.showEqualizer) {
@@ -28,6 +20,10 @@ struct RootView: View {
         }
         .sheet(isPresented: $player.showWifi) {
             WifiUploadSheet()
+        }
+        .fullScreenCover(isPresented: $player.showFullScreenVisual) {
+            FullScreenVisualizerView()
+                .environmentObject(player)
         }
         .overlay(alignment: .bottom) {
             toastLayer
@@ -42,6 +38,50 @@ struct RootView: View {
                     player.toast = nil
                 }
             }
+        }
+    }
+
+    // MARK: 主布局
+
+    /// 播放列表吃满剩下的高度（不再在底部留一条空档）；
+    /// 歌词优先拿舒服的高度，空间不够时先它让位，再不行就退回可滚动布局（SE 这类小屏）。
+    @ViewBuilder
+    private func layout(size: CGSize) -> some View {
+        let spacing: CGFloat = 10
+        let usable = max(0, size.height - 6 - 10)
+        let mainEstimate: CGFloat = 352          // 主窗口的自然高度，只用来估分，实际靠 flexible frame 收尾
+        let lyricsCeiling: CGFloat = 196
+        let lyricsFloor: CGFloat = 128
+        let playlistMin: CGFloat = 236
+        let playlistFloor: CGFloat = 200         // 低于这个高度就让整屏滚动，播放列表回到固定高度
+
+        let free = max(0, usable - mainEstimate - spacing * 2)   // 歌词 + 播放列表 可用的高度
+        let lyricsHeight = min(lyricsCeiling, max(lyricsFloor, free - playlistMin))
+        let lyricsChrome = player.showLyricsPanel ? lyricsHeight : 27
+        let playlistSpace = free - lyricsChrome
+        let fills = playlistSpace >= playlistFloor
+
+        if fills {
+            windowStack(spacing: spacing, lyricsHeight: lyricsHeight, fills: true)
+                .padding(.horizontal, 12)
+                .padding(.top, 6)
+                .padding(.bottom, 10)
+        } else {
+            ScrollView(.vertical, showsIndicators: false) {
+                windowStack(spacing: spacing, lyricsHeight: lyricsCeiling, fills: false)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 6)
+                    .padding(.bottom, 14)
+            }
+            .scrollDismissesKeyboard(.interactively)
+        }
+    }
+
+    private func windowStack(spacing: CGFloat, lyricsHeight: CGFloat, fills: Bool) -> some View {
+        VStack(spacing: spacing) {
+            MainWindowView()
+            LyricsWindowView(contentHeight: lyricsHeight)
+            PlaylistWindowView(fillsHeight: fills)
         }
     }
 

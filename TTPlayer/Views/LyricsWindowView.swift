@@ -7,6 +7,9 @@ struct LyricsWindowView: View {
     @EnvironmentObject var player: PlayerStore
     @State private var showPicker = false
 
+    /// 歌词可视区域高度，由 RootView 按屏幕高度分配
+    var contentHeight: CGFloat = 196
+
     private var theme: Theme { player.theme }
 
     var body: some View {
@@ -109,7 +112,7 @@ struct LyricsWindowView: View {
                 .lineSpacing(3)
         }
         .frame(maxWidth: .infinity)
-        .frame(height: 190)
+        .frame(height: max(120, contentHeight - 20))
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(Color.black.opacity(theme.isClassic ? 0.05 : 0.20))
@@ -135,10 +138,10 @@ struct LyricsWindowView: View {
                                 .id(line.id)
                         }
                     }
-                    .padding(.vertical, 88)
+                    .padding(.vertical, max(28, contentHeight * 0.32))
                     .frame(maxWidth: .infinity)
                 }
-                .frame(height: 210)
+                .frame(height: contentHeight)
                 .mask(
                     LinearGradient(
                         stops: [
@@ -164,7 +167,7 @@ struct LyricsWindowView: View {
                 }
             }
         }
-        .frame(height: 210)
+        .frame(height: contentHeight)
     }
 
     private func lyricRow(_ line: LyricLine, active: Bool) -> some View {

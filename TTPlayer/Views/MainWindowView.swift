@@ -18,7 +18,7 @@ struct MainWindowView: View {
         ) {
             VStack(spacing: 10) {
                 lcd
-                spectrumBlock
+                visualBlock
                 seekRow
                 transportRow
             }
@@ -65,6 +65,26 @@ struct MainWindowView: View {
                     RoundedRectangle(cornerRadius: 5, style: .continuous)
                         .fill(Color.black.opacity(0.18))
                 )
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                player.showFullScreenVisual = true
+            } label: {
+                HStack(spacing: 3) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 9, weight: .bold))
+                    Text("视觉")
+                        .font(.system(size: 9, weight: .semibold))
+                }
+                .foregroundColor(theme.barText)
+                .padding(.horizontal, 6)
+                .frame(height: 18)
+                .background(
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(theme.accent.opacity(0.55))
+                )
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
         }
@@ -143,29 +163,94 @@ struct MainWindowView: View {
         )
     }
 
-    // MARK: 频谱
+    // MARK: 视觉播放
 
-    private var spectrumBlock: some View {
+    private var visualBlock: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 7, style: .continuous)
                 .fill(Color.black.opacity(theme.isClassic ? 0.18 : 0.42))
-            SpectrumView(bands: player.spectrum, peaks: player.spectrumPeaks, theme: theme)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 7)
-            VStack {
-                Spacer()
-                Rectangle()
-                    .fill(theme.accent.opacity(0.22))
-                    .frame(height: 1)
-                    .padding(.horizontal, 8)
-                    .padding(.bottom, 6)
+
+            VisualizerView(
+                mode: player.visualMode,
+                bands: player.spectrum,
+                peaks: player.spectrumPeaks,
+                theme: theme,
+                elapsed: player.elapsed,
+                isPlaying: player.isPlaying,
+                artwork: player.currentEmbeddedArtwork
+            )
+            .padding(.horizontal, 8)
+            .padding(.vertical, 7)
+            .allowsHitTesting(false)
+
+            VStack(spacing: 0) {
+                HStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    Button {
+                        player.showFullScreenVisual = true
+                    } label: {
+                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                            .font(.system(size: 8.5, weight: .bold))
+                            .foregroundColor(theme.spectrumPeak.opacity(0.9))
+                            .frame(width: 22, height: 17)
+                            .background(
+                                Capsule().fill(Color.black.opacity(0.42))
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+                Spacer(minLength: 0)
+                HStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    visualModePill
+                }
             }
+            .padding(5)
         }
-        .frame(height: 74)
+        .frame(height: 88)
         .overlay(
             RoundedRectangle(cornerRadius: 7, style: .continuous)
                 .strokeBorder(theme.lcdBorder.opacity(0.55), lineWidth: 1)
         )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            player.cycleVisualMode()
+        }
+    }
+
+    private var visualModePill: some View {
+        Menu {
+            ForEach(VisualMode.allCases) { mode in
+                Button {
+                    player.selectVisualMode(mode)
+                } label: {
+                    Label("\(mode.title) · \(mode.hint)", systemImage: mode.symbol)
+                }
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Image(systemName: player.visualMode.symbol)
+                    .font(.system(size: 7.5, weight: .bold))
+                Text(player.visualMode.title)
+                    .font(.system(size: 8.5, weight: .semibold))
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 6, weight: .bold))
+            }
+            .foregroundColor(theme.spectrumPeak.opacity(0.92))
+            .padding(.horizontal, 6)
+            .frame(height: 17)
+            .background(
+                Capsule().fill(Color.black.opacity(0.45))
+            )
+            .overlay(
+                Capsule().strokeBorder(theme.spectrumTop.opacity(0.35), lineWidth: 0.6)
+            )
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
     }
 
     // MARK: 进度

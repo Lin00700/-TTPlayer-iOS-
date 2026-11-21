@@ -2,10 +2,10 @@ import Accelerate
 import AVFoundation
 import Foundation
 
-/// 20 段实时频谱。取 AVAudioEngine tap 的 PCM 缓冲做 2048 点实数 FFT，
-/// 按对数频率切成 20 段，快速起、缓慢落，做出千千静听那种“顶一下就慢慢掉”的观感。
+/// 24 段实时频谱。取 AVAudioEngine tap 的 PCM 缓冲做 2048 点实数 FFT，
+/// 按对数频率切成 24 段，快速起、缓慢落，做出千千静听那种“顶一下就慢慢掉”的观感。
 final class SpectrumAnalyzer {
-    static let bandCount = 20
+    static let bandCount = 24
 
     private let fftSize = 2048
     private let halfSize = 1024
@@ -55,7 +55,7 @@ final class SpectrumAnalyzer {
 
     var peaks: [Float] { peakValues }
 
-    /// 处理一帧 PCM，返回平滑之后的 20 段能量（0…1）。
+    /// 处理一帧 PCM，返回平滑之后的 24 段能量（0…1）。
     @discardableResult
     func process(buffer: AVAudioPCMBuffer) -> [Float] {
         guard let channelData = buffer.floatChannelData else { return smoothed }

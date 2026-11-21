@@ -68,6 +68,10 @@ final class PlayerStore: ObservableObject {
         didSet { scheduleSave() }
     }
 
+    @Published var visualMode: VisualMode = .spectrum {
+        didSet { scheduleSave() }
+    }
+
     // MARK: 歌词
 
     @Published private(set) var lyrics: [LyricLine] = []
@@ -85,6 +89,7 @@ final class PlayerStore: ObservableObject {
 
     @Published var showEqualizer = false
     @Published var showWifi = false
+    @Published var showFullScreenVisual = false
     @Published var toast: String?
     @Published private(set) var isImporting = false
     @Published private(set) var importDone = 0
@@ -106,6 +111,7 @@ final class PlayerStore: ObservableObject {
         lyricOffsets = settings.lyricOffsets
         showLyricsPanel = settings.showLyricsPanel
         showPlaylistPanel = settings.showPlaylistPanel
+        visualMode = settings.visualMode
 
         engine.setVolume(Float(settings.volume))
         engine.apply(equalizer: storedEQ)
@@ -190,6 +196,26 @@ final class PlayerStore: ObservableObject {
     }
 
     var theme: Theme { Theme.of(skin) }
+
+    /// 当前曲目自带的内嵌封面（没有就返回 nil，黑胶视图自己画经典唱片标签）
+    var currentEmbeddedArtwork: UIImage? {
+        guard let track = currentTrack,
+              let name = track.artworkFileName, !name.isEmpty else { return nil }
+        return artworkImage(for: track)
+    }
+
+    // MARK: - 视觉播放
+
+    func selectVisualMode(_ mode: VisualMode, announce: Bool = true) {
+        visualMode = mode
+        if announce {
+            toast = "视觉播放：\(mode.title)"
+        }
+    }
+
+    func cycleVisualMode() {
+        selectVisualMode(visualMode.next)
+    }
 
     // MARK: - 播放
 
@@ -685,7 +711,8 @@ final class PlayerStore: ObservableObject {
             equalizer: equalizer,
             lyricOffsets: lyricOffsets,
             showLyricsPanel: showLyricsPanel,
-            showPlaylistPanel: showPlaylistPanel
+            showPlaylistPanel: showPlaylistPanel,
+            visualMode: visualMode
         )
         library.saveState(LibrarySnapshot(tracks: tracks, settings: settings))
     }

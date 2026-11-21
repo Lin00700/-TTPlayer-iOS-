@@ -7,6 +7,10 @@ struct PlaylistWindowView: View {
     @State private var showFolderPicker = false
     @State private var editMode: EditMode = .inactive
 
+    /// true：列表伸展填满窗口剩余高度（RootView 估出屏幕装得下时开）；
+    /// false：保持固定 248 高度，随整屏滚动
+    var fillsHeight: Bool = false
+
     private var theme: Theme { player.theme }
 
     var body: some View {
@@ -29,7 +33,9 @@ struct PlaylistWindowView: View {
             .padding(.horizontal, 10)
             .padding(.top, 8)
             .padding(.bottom, 10)
+            .frame(maxHeight: fillsHeight ? .infinity : nil, alignment: .top)
         }
+        .frame(maxHeight: fillsHeight ? .infinity : nil)
         .sheet(isPresented: $showFilePicker) {
             AudioDocumentPicker(mode: .files) { urls in
                 player.importDocuments(urls)
@@ -172,7 +178,8 @@ struct PlaylistWindowView: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .environment(\.editMode, $editMode)
-        .frame(height: 248)
+        .frame(height: fillsHeight ? nil : 248)
+        .frame(maxHeight: fillsHeight ? .infinity : nil)
     }
 
     private func row(_ track: Track, ordinal: Int) -> some View {
@@ -279,7 +286,8 @@ struct PlaylistWindowView: View {
             .padding(.top, 2)
         }
         .frame(maxWidth: .infinity)
-        .frame(height: 248)
+        .frame(height: fillsHeight ? nil : 248)
+        .frame(maxHeight: fillsHeight ? .infinity : nil)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(Color.black.opacity(theme.isClassic ? 0.04 : 0.18))
