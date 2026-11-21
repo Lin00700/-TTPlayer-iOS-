@@ -32,6 +32,9 @@ struct RootView: View {
         .overlay(alignment: .bottom) {
             toastLayer
         }
+        .overlay(alignment: .top) {
+            importBanner
+        }
         .onChange(of: player.toast) { value in
             guard let value = value else { return }
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.4) {
@@ -106,6 +109,34 @@ struct RootView: View {
         .padding(.horizontal, 16)
         .padding(.top, 10)
         .padding(.bottom, 6)
+    }
+
+    // MARK: 导入进度
+
+    private var importBanner: some View {
+        Group {
+            if player.isImporting {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .scaleEffect(0.7)
+                        .tint(theme.accentSoft)
+                    Text("正在导入 \(player.importDone)/\(max(player.importTotal, 1))")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(theme.textPrimary)
+                }
+                .padding(.horizontal, 13)
+                .padding(.vertical, 7)
+                .background(
+                    Capsule().fill(Color.black.opacity(theme.isClassic ? 0.55 : 0.7))
+                )
+                .overlay(
+                    Capsule().strokeBorder(theme.accent.opacity(0.45), lineWidth: 0.8)
+                )
+                .padding(.top, 6)
+                .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: player.isImporting)
     }
 
     // MARK: 提示
