@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreMedia
 import Foundation
 
 // MARK: - 持久化结构
@@ -40,7 +41,7 @@ final class Library {
         ensureDirectories()
     }
 
-    private func ensureDirectories() {
+    func ensureDirectories() {
         for directory in [musicDirectory, artworkDirectory] {
             if !fileManager.fileExists(atPath: directory.path) {
                 try? fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -216,6 +217,26 @@ enum MetadataLoader {
             if result.duration <= 0, format.sampleRate > 0 {
                 result.duration = Double(audioFile.length) / format.sampleRate
             }
+        } else if let track = asset.tracks(withMediaType: .audio).first {
+            // AVAudioFile 打不开（非标准头 / 后缀和内容不符）时退回 AVAsset 的格式描述，
+            // 采样率读数就不会只剩一个「—」
+            if let description = track.formatDescriptions.first {
+                let format = description as! CMFormatDescription
+                if let basic = CMAudioFormatDescriptionGetStreamBasicDescription(format)?.pointee {
+                    if basic.mSampleRate.isFinite, basic.mSampleRate > 0 {
+                        result.sampleRate = basic.mSampleRate
+                    }
+                    if basic.mChannelsPerFrame > 0 {
+                        result.channels = Int(basic.mChannelsPerFrame)
+                    }
+                }
+            }
+            if result.duration <= 0 {
+                let range = track.timeRange.duration.seconds
+                if range.isFinite, range > 0 {
+                    result.duration = range
+                }
+            }
         }
 
         return result
@@ -229,24 +250,83 @@ enum MediaImporter {
         var addedTracks: [Track] = []
         var lyricsCount: Int = 0
         var failed: Int = 0
-    }
+        var failures: [String] = []
 
-    /// 单个 URL（文件或文件夹）导入，返回新增曲目
-    static func importItem(_ url: URL, into library: Library) async -> Summary {
-        var summary = Summary()
-        let files = expand(url)
-
-        for file in files where AudioFormat.isAudio(file.pathExtension) {
-            if let track = await copyAudio(file, into: library) {
-                summary.addedTracks.append(track)
-            } else {
-                summary.failed += 1
+        mutating func recordFailure(_ message: String) {
+            failed += 1
+            if failures.count < 4 {
+                failures.append(message)
             }
         }
-        for file in files where AudioFormat.lyricsExtensions.contains(file.pathExtension.lowercased()) {
-            if copyLyrics(file, into: library) {
-                summary.lyricsCount += 1
+
+        var isEmpty: Bool {
+            addedTracks.isEmpty && lyricsCount == 0
+        }
+    }
+
+    /// 单个 URL（文件或文件夹）导入：自己处理安全作用域，调用方不用再管
+    static func importItem(_ url: URL, into library: Library) async -> Summary {
+        var summary = Summary()
+        library.ensureDirectories()
+
+        let accessed = url.startAccessingSecurityScopedResource()
+        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+
+        let fileManager = FileManager.default
+        var isDirectory: ObjCBool = false
+        let exists = fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory)
+
+        let files = expand(url)
+        guard !files.isEmpty else {
+            if !exists {
+                summary.recordFailure("\(url.lastPathComponent)：读不到这个位置（iCloud 可能还没下载完）")
+            } else if isDirectory.boolValue {
+                summary.recordFailure("\(url.lastPathComponent)：文件夹里没有文件")
             }
+            return summary
+        }
+
+        for file in files {
+            let ext = file.pathExtension.lowercased()
+
+            if AudioFormat.lyricsExtensions.contains(ext) {
+                do {
+                    try copyLyrics(file, into: library)
+                    summary.lyricsCount += 1
+                } catch {
+                    summary.recordFailure("\(file.lastPathComponent)：\(friendly(error))")
+                }
+                continue
+            }
+
+            if let kind = AudioFormat.encryptedKind(for: file) {
+                summary.recordFailure("\(file.lastPathComponent)：\(kind)，要先解密成普通音频")
+                continue
+            }
+
+            var resolvedExtension = ext
+            if !AudioFormat.isAudio(resolvedExtension) {
+                resolvedExtension = AudioFormat.sniffExtension(url: file) ?? ""
+            }
+
+            guard AudioFormat.isAudio(resolvedExtension) else {
+                // 文件夹里的图片、封面之类默默略过，单独选中的文件才报错
+                if !isDirectory.boolValue {
+                    summary.recordFailure("\(file.lastPathComponent)：不是可识别的音频文件")
+                }
+                continue
+            }
+
+            do {
+                let track = try await copyAudio(file, extension: resolvedExtension, into: library)
+                summary.addedTracks.append(track)
+            } catch {
+                summary.recordFailure("\(file.lastPathComponent)：\(friendly(error))")
+            }
+        }
+
+        if summary.isEmpty, summary.failed == 0 {
+            summary.recordFailure("\(url.lastPathComponent)：没找到可导入的歌曲或歌词")
         }
         return summary
     }
@@ -259,45 +339,95 @@ enum MediaImporter {
             return [url]
         }
 
-        var files: [URL] = []
-        let keys: [URLResourceKey] = [.isDirectoryKey]
-        if let enumerator = fileManager.enumerator(at: url, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) {
+        let keys: [URLResourceKey] = [.isDirectoryKey, .isRegularFileKey]
+        func walk(_ root: URL) -> [URL] {
+            guard let enumerator = fileManager.enumerator(
+                at: root,
+                includingPropertiesForKeys: keys,
+                options: [.skipsHiddenFiles, .skipsPackageDescendants]
+            ) else { return [] }
+
+            var files: [URL] = []
             for case let item as URL in enumerator {
+                let name = item.lastPathComponent
+                if name == "__MACOSX" || name.hasPrefix("._") { continue }
                 let values = try? item.resourceValues(forKeys: Set(keys))
                 if values?.isDirectory == true { continue }
                 files.append(item)
             }
+            return files
         }
-        return files
+
+        // 文件夹在 iCloud Drive / 第三方文件 App 里时，先协调读取一次再枚举
+        var coordinated: [URL] = []
+        var coordinatorError: NSError?
+        NSFileCoordinator().coordinate(readingItemAt: url, options: [.withoutChanges], error: &coordinatorError) { readURL in
+            coordinated = walk(readURL)
+        }
+        if !coordinated.isEmpty {
+            return coordinated
+        }
+        return walk(url)
     }
 
-    private static func copyAudio(_ source: URL, into library: Library) async -> Track? {
-        let fileManager = FileManager.default
-        let ext = source.pathExtension.lowercased()
-        guard AudioFormat.isAudio(ext) else { return nil }
+    private static func copyAudio(_ source: URL, extension ext: String, into library: Library) async throws -> Track {
+        library.ensureDirectories()
         let baseName = source.deletingPathExtension().lastPathComponent
         let destination = uniqueDestination(in: library.musicDirectory, baseName: baseName, extension: ext)
-        do {
-            try fileManager.copyItem(at: source, to: destination)
-        } catch {
-            NSLog("TTPlayer: copy \(source.lastPathComponent) failed — \(error.localizedDescription)")
-            return nil
-        }
+        try coordinatedCopy(from: source, to: destination)
         return await makeTrack(for: destination, in: library)
     }
 
-    private static func copyLyrics(_ source: URL, into library: Library) -> Bool {
-        let fileManager = FileManager.default
+    private static func copyLyrics(_ source: URL, into library: Library) throws {
+        library.ensureDirectories()
         let baseName = source.deletingPathExtension().lastPathComponent
         let destination = library.musicDirectory.appendingPathComponent("\(baseName).lrc")
-        if fileManager.fileExists(atPath: destination.path) {
-            try? fileManager.removeItem(at: destination)
+        try coordinatedCopy(from: source, to: destination)
+    }
+
+    /// 读安全作用域 / 文件 App 里的文件统一走 NSFileCoordinator：
+    /// iCloud 没下载的会在这里触发下载，第三方 App 的沙箱文件也才能读到
+    private static func coordinatedCopy(from source: URL, to destination: URL) throws {
+        let fileManager = FileManager.default
+        var coordinatorError: NSError?
+        var copyError: Error?
+
+        NSFileCoordinator().coordinate(readingItemAt: source, options: [], error: &coordinatorError) { readURL in
+            do {
+                if fileManager.fileExists(atPath: destination.path) {
+                    try fileManager.removeItem(at: destination)
+                }
+                try fileManager.copyItem(at: readURL, to: destination)
+            } catch {
+                copyError = error
+            }
         }
-        do {
-            try fileManager.copyItem(at: source, to: destination)
-            return true
-        } catch {
-            return false
+
+        if let copyError = copyError {
+            throw copyError
+        }
+        if let coordinatorError = coordinatorError {
+            throw coordinatorError
+        }
+        guard fileManager.fileExists(atPath: destination.path) else {
+            throw MediaImportError.copyFailed("复制没有成功")
+        }
+    }
+
+    private static func friendly(_ error: Error) -> String {
+        let nsError = error as NSError
+        guard nsError.domain == NSCocoaErrorDomain else {
+            return nsError.localizedDescription
+        }
+        switch nsError.code {
+        case CocoaError.Code.fileNoSuchFile.rawValue, CocoaError.Code.fileReadNoSuchFile.rawValue:
+            return "文件读不到（iCloud 没下载完或已经被移走）"
+        case CocoaError.Code.fileReadNoPermission.rawValue, CocoaError.Code.fileWriteNoPermission.rawValue:
+            return "没有读取权限"
+        case CocoaError.Code.fileWriteOutOfSpace.rawValue:
+            return "手机空间不足"
+        default:
+            return nsError.localizedDescription
         }
     }
 
@@ -338,6 +468,17 @@ enum MediaImporter {
             counter += 1
         }
         return candidate
+    }
+}
+
+enum MediaImportError: LocalizedError {
+    case copyFailed(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .copyFailed(let reason):
+            return reason
+        }
     }
 }
 

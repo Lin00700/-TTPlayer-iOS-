@@ -112,6 +112,17 @@ def check_plist():
     if "_http._tcp" not in info.get("NSBonjourServices", []):
         fail("Info.plist 缺少 NSBonjourServices: _http._tcp")
 
+    # 「用千千静听打开」：要把音频声明成可接收的文档类型
+    document_types = info.get("CFBundleDocumentTypes", [])
+    declared = set()
+    for entry in document_types:
+        declared.update(entry.get("LSItemContentTypes", []))
+    if "public.audio" not in declared:
+        fail("Info.plist 缺少 CFBundleDocumentTypes: public.audio（外部 App 打不开歌曲）")
+    imported = [item.get("UTTypeIdentifier") for item in info.get("UTImportedTypeDeclarations", [])]
+    if "com.lin.ttplayer.lrc" not in imported:
+        fail("Info.plist 缺少 com.lin.ttplayer.lrc 类型声明（.lrc 无法「用千千静听打开」）")
+
     note("Info.plist 关键字段齐全")
 
 
@@ -145,6 +156,37 @@ def check_assets():
     note("资源目录与图标检查完成")
 
 
+def check_import_and_playback():
+    """导入与播放兼容的两处回归：文件选择必须走 asCopy，AVAudioFile 打不开时要回退 AVPlayer"""
+    picker = os.path.join(ROOT, "TTPlayer", "Views", "DocumentPicker.swift")
+    with open(picker, "r", encoding="utf-8") as handle:
+        picker_text = handle.read()
+    for needle in ["asCopy: true", "case folder"]:
+        if needle not in picker_text:
+            fail(f"DocumentPicker.swift 缺少 {needle}")
+
+    library = os.path.join(ROOT, "TTPlayer", "Library", "Library.swift")
+    with open(library, "r", encoding="utf-8") as handle:
+        library_text = handle.read()
+    for needle in ["NSFileCoordinator", "sniffExtension", "encryptedKind"]:
+        if needle not in library_text:
+            fail(f"Library.swift 缺少 {needle}")
+
+    engine = os.path.join(ROOT, "TTPlayer", "Audio", "AudioEngineController.swift")
+    with open(engine, "r", encoding="utf-8") as handle:
+        engine_text = handle.read()
+    for needle in ["AVPlayerItem", "AVAudioFile(forReading:", "onFailure"]:
+        if needle not in engine_text:
+            fail(f"AudioEngineController.swift 缺少 {needle}")
+
+    app = os.path.join(ROOT, "TTPlayer", "TTPlayerApp.swift")
+    with open(app, "r", encoding="utf-8") as handle:
+        if ".onOpenURL" not in handle.read():
+            fail("TTPlayerApp.swift 缺少 onOpenURL（外部 App「打开」进来的文件没人接）")
+
+    note("导入与播放兼容检查完成")
+
+
 def check_project():
     path = os.path.join(ROOT, "project.yml")
     if not os.path.exists(path):
@@ -176,6 +218,7 @@ def check_workflow():
 def main():
     parse_sources()
     check_plist()
+    check_import_and_playback()
     check_assets()
     check_project()
     check_workflow()

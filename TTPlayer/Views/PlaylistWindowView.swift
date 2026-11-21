@@ -3,7 +3,8 @@ import SwiftUI
 /// 播放列表窗口：搜索、播放、滑动删除、拖动排序、插播。
 struct PlaylistWindowView: View {
     @EnvironmentObject var player: PlayerStore
-    @State private var showPicker = false
+    @State private var showFilePicker = false
+    @State private var showFolderPicker = false
     @State private var editMode: EditMode = .inactive
 
     private var theme: Theme { player.theme }
@@ -29,8 +30,13 @@ struct PlaylistWindowView: View {
             .padding(.top, 8)
             .padding(.bottom, 10)
         }
-        .sheet(isPresented: $showPicker) {
-            AudioDocumentPicker { urls in
+        .sheet(isPresented: $showFilePicker) {
+            AudioDocumentPicker(mode: .files) { urls in
+                player.importDocuments(urls)
+            }
+        }
+        .sheet(isPresented: $showFolderPicker) {
+            AudioDocumentPicker(mode: .folder) { urls in
                 player.importDocuments(urls)
             }
         }
@@ -55,25 +61,42 @@ struct PlaylistWindowView: View {
             }
             .buttonStyle(.plain)
 
-            Button {
-                showPicker = true
-            } label: {
-                HStack(spacing: 3) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 8.5, weight: .bold))
-                    Text("导入")
-                        .font(.system(size: 9.5, weight: .semibold))
+            Menu {
+                Button {
+                    showFilePicker = true
+                } label: {
+                    Label("导入歌曲 / 歌词", systemImage: "music.note")
                 }
-                .foregroundColor(theme.barText)
-                .padding(.horizontal, 6)
-                .frame(height: 18)
-                .background(
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
-                        .fill(theme.accent.opacity(0.55))
-                )
+                Button {
+                    showFolderPicker = true
+                } label: {
+                    Label("导入整个文件夹", systemImage: "folder")
+                }
+            } label: {
+                importChip
             }
+            .menuStyle(.button)
             .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .fixedSize()
         }
+    }
+
+    private var importChip: some View {
+        HStack(spacing: 3) {
+            Image(systemName: "plus")
+                .font(.system(size: 8.5, weight: .bold))
+            Text("导入")
+                .font(.system(size: 9.5, weight: .semibold))
+        }
+        .foregroundColor(theme.barText)
+        .padding(.horizontal, 6)
+        .frame(height: 18)
+        .background(
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .fill(theme.accent.opacity(0.55))
+        )
+        .contentShape(Rectangle())
     }
 
     // MARK: 搜索
@@ -244,7 +267,10 @@ struct PlaylistWindowView: View {
                 .lineSpacing(3)
             HStack(spacing: 8) {
                 TTSmallButton(title: "导入文件", theme: theme, filled: true) {
-                    showPicker = true
+                    showFilePicker = true
+                }
+                TTSmallButton(title: "导入文件夹", theme: theme) {
+                    showFolderPicker = true
                 }
                 TTSmallButton(title: "Wi-Fi 传歌", theme: theme) {
                     player.showWifi = true

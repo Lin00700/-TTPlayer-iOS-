@@ -186,39 +186,3 @@ struct LyricsWindowView: View {
             .animation(.easeInOut(duration: 0.18), value: active)
     }
 }
-
-/// 只挑 .lrc / .txt 的文件选择器
-struct LyricsDocumentPicker: UIViewControllerRepresentable {
-    let onPick: (URL) -> Void
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(onPick: onPick)
-    }
-
-    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
-        var types: [UTType] = []
-        if let lrc = UTType(filenameExtension: "lrc") { types.append(lrc) }
-        if let txt = UTType(filenameExtension: "txt") { types.append(txt) }
-        if types.isEmpty { types.append(.plainText) }
-
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: types, asCopy: false)
-        picker.allowsMultipleSelection = false
-        picker.delegate = context.coordinator
-        return picker
-    }
-
-    func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
-
-    final class Coordinator: NSObject, UIDocumentPickerDelegate {
-        private let onPick: (URL) -> Void
-
-        init(onPick: @escaping (URL) -> Void) {
-            self.onPick = onPick
-        }
-
-        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-            guard let url = urls.first else { return }
-            onPick(url)
-        }
-    }
-}

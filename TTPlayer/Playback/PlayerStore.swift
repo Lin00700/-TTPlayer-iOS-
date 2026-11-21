@@ -123,6 +123,37 @@ final class PlayerStore: ObservableObject {
             }
         }
 
+        // 兼容通道（AVPlayer）解码失败时说清楚原因，别让界面停在“播放中”
+        engine.onFailure = { [weak self] reason in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                self.isPlaying = false
+                if let track = self.currentTrack {
+                    self.toast = "无法播放《\(track.displayTitle)》：\(reason)"
+                } else {
+                    self.toast = "无法播放：\(reason)"
+                }
+                self.updateNowPlaying()
+            }
+        }
+
+        // 兼容通道的时长要等 AVPlayerItem 就绪才知道，拿到就顺手修正曲库
+        engine.onDurationResolved = { [weak self] seconds in
+            guard seconds.isFinite, seconds > 0 else { return }
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                if self.duration <= 0 || abs(self.duration - seconds) > 0.5 {
+                    self.duration = seconds
+                }
+                if let id = self.currentTrackID,
+                   let index = self.tracks.firstIndex(where: { $0.id == id }),
+                   abs(self.tracks[index].duration - seconds) > 0.5 {
+                    self.tracks[index].duration = seconds
+                    self.scheduleSave()
+                }
+            }
+        }
+
         setupRemoteCommands()
         observeSessionNotifications()
         startTicker()
@@ -187,6 +218,11 @@ final class PlayerStore: ObservableObject {
             isPlaying = true
             loadLyrics(for: track)
             updateNowPlaying()
+
+            // 这首歌走的是 AVPlayer 兼容通道，EQ 不生效，得告知一声
+            if info.compatibility, equalizer.enabled {
+                toast = "《\(track.displayTitle)》用兼容模式播放，EQ 暂时不生效"
+            }
         } catch {
             currentTrackID = track.id
             isPlaying = false
@@ -433,21 +469,34 @@ final class PlayerStore: ObservableObject {
             toast = "先播放一首歌，再导入它的歌词"
             return
         }
+        library.ensureDirectories()
+
         let accessed = url.startAccessingSecurityScopedResource()
         defer { if accessed { url.stopAccessingSecurityScopedResource() } }
 
         let base = (track.fileName as NSString).deletingPathExtension
         let destination = library.musicDirectory.appendingPathComponent("\(base).lrc")
         let fileManager = FileManager.default
-        do {
-            if fileManager.fileExists(atPath: destination.path) {
-                try fileManager.removeItem(at: destination)
+
+        var coordinatorError: NSError?
+        var copyError: Error?
+        NSFileCoordinator().coordinate(readingItemAt: url, options: [], error: &coordinatorError) { readURL in
+            do {
+                if fileManager.fileExists(atPath: destination.path) {
+                    try fileManager.removeItem(at: destination)
+                }
+                try fileManager.copyItem(at: readURL, to: destination)
+            } catch {
+                copyError = error
             }
-            try fileManager.copyItem(at: url, to: destination)
+        }
+
+        if copyError == nil, coordinatorError == nil, fileManager.fileExists(atPath: destination.path) {
             loadLyrics(for: track)
             toast = "已导入歌词：\(destination.lastPathComponent)"
-        } catch {
-            toast = "导入歌词失败：\(error.localizedDescription)"
+        } else {
+            let reason = copyError?.localizedDescription ?? coordinatorError?.localizedDescription ?? "复制没有成功"
+            toast = "导入歌词失败：\(reason)"
         }
     }
 
@@ -492,31 +541,38 @@ final class PlayerStore: ObservableObject {
         }
     }
 
+    /// 从「文件」/ 微信 / QQ 里「用千千静听打开」传进来的文件
+    func importIncomingFiles(_ urls: [URL]) {
+        let files = urls.filter { $0.isFileURL }
+        guard !files.isEmpty else {
+            toast = "只能导入手机里的文件"
+            return
+        }
+        importDocuments(files)
+    }
+
     func importDocuments(_ urls: [URL]) {
         guard !urls.isEmpty else { return }
         isImporting = true
         importDone = 0
         importTotal = urls.count
 
-        let scoped: [(URL, Bool)] = urls.map { ($0, $0.startAccessingSecurityScopedResource()) }
-
         Task { [weak self] in
             guard let self = self else { return }
             var added: [Track] = []
             var lyricCount = 0
             var failed = 0
+            var failureMessages: [String] = []
 
-            for (position, pair) in scoped.enumerated() {
-                let summary = await MediaImporter.importItem(pair.0, into: self.library)
+            for (position, url) in urls.enumerated() {
+                // 安全作用域在 MediaImporter 里成对开始 / 结束，asCopy 拿到的临时文件也能直接读
+                let summary = await MediaImporter.importItem(url, into: self.library)
                 added.append(contentsOf: summary.addedTracks)
                 lyricCount += summary.lyricsCount
                 failed += summary.failed
+                failureMessages.append(contentsOf: summary.failures)
                 let done = position + 1
                 await MainActor.run { self.importDone = done }
-            }
-
-            for (url, accessed) in scoped where accessed {
-                url.stopAccessingSecurityScopedResource()
             }
 
             await MainActor.run {
@@ -529,8 +585,19 @@ final class PlayerStore: ObservableObject {
                 var parts: [String] = []
                 if !added.isEmpty { parts.append("\(added.count) 首歌曲") }
                 if lyricCount > 0 { parts.append("\(lyricCount) 个歌词") }
-                if failed > 0 { parts.append("\(failed) 个失败") }
-                self.toast = parts.isEmpty ? "没有找到可导入的音频文件" : "导入完成：" + parts.joined(separator: "、")
+                if failed > 0 { parts.append("\(failed) 个没法导入") }
+
+                if added.isEmpty, lyricCount == 0, let first = failureMessages.first {
+                    self.toast = "导入失败：\(first)"
+                } else if parts.isEmpty {
+                    self.toast = "没有找到可导入的音频文件"
+                } else {
+                    var message = "导入完成：" + parts.joined(separator: "、")
+                    if failed > 0, let first = failureMessages.first {
+                        message = "导入完成（\(failed) 个失败）：\(first)"
+                    }
+                    self.toast = message
+                }
 
                 if self.currentTrackID == nil, let first = self.tracks.first {
                     self.playTrack(first)
