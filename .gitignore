@@ -1,0 +1,19 @@
+# macOS
+.DS_Store
+
+# XcodeGen 生成物
+TTPlayer.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+build/
+DerivedData/
+
+# 构建产物
+*.ipa
+Payload/
+*.log
+checksum.txt
+
+# Python
+__pycache__/
+*.pyc

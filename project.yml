@@ -1,0 +1,58 @@
+name: TTPlayer
+
+options:
+  bundleIdPrefix: com.lin
+  deploymentTarget:
+    iOS: "16.0"
+  xcodeVersion: "16.0"
+  # XcodeGen 在 createIntermediateGroups 打开时遇到深层目录会卡死，这里显式关掉
+  createIntermediateGroups: false
+  groupSortPosition: top
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+    CODE_SIGNING_ALLOWED: "NO"
+    CODE_SIGNING_REQUIRED: "NO"
+    CODE_SIGN_IDENTITY: ""
+    ENABLE_USER_SCRIPT_SANDBOXING: "NO"
+    SWIFT_STRICT_CONCURRENCY: minimal
+    ALWAYS_SEARCH_USER_PATHS: "NO"
+    CLANG_ENABLE_MODULES: "YES"
+    ENABLE_BITCODE: "NO"
+
+targets:
+  TTPlayer:
+    type: application
+    platform: iOS
+    sources:
+      - path: TTPlayer
+        excludes:
+          - "Info.plist"
+    settings:
+      base:
+        PRODUCT_NAME: TTPlayer
+        PRODUCT_BUNDLE_IDENTIFIER: com.lin.ttplayer
+        INFOPLIST_FILE: TTPlayer/Info.plist
+        GENERATE_INFOPLIST_FILE: "NO"
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        ENABLE_PREVIEWS: "YES"
+        SWIFT_EMIT_LOC_STRINGS: "NO"
+        SWIFT_OBJC_BRIDGING_HEADER: ""
+
+schemes:
+  TTPlayer:
+    build:
+      targets:
+        TTPlayer: all
+    run:
+      config: Debug
+    archive:
+      config: Release
