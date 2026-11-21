@@ -15,27 +15,25 @@ enum NetworkInfo {
         var current: UnsafeMutablePointer<ifaddrs>? = first
         while let interfacePointer = current {
             let interface = interfacePointer.pointee
-            if interface.ifa_addr != nil {
-                let family = interface.ifa_addr.pointee.sa_family
-                if family == UInt8(AF_INET) {
-                    let name = String(cString: interface.ifa_name)
-                    if name == "en0" || name.hasPrefix("en") || name.hasPrefix("bridge") {
-                        var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-                        let address = interface.ifa_addr
-                        let result = getnameinfo(
-                            address,
-                            socklen_t(address.pointee.sa_len),
-                            &hostname,
-                            socklen_t(hostname.count),
-                            nil,
-                            0,
-                            NI_NUMERICHOST
-                        )
-                        if result == 0 {
-                            let ip = String(cString: hostname)
-                            if !ip.isEmpty, ip != "0.0.0.0" {
-                                candidates.append(ip)
-                            }
+            if let address = interface.ifa_addr,
+               let namePointer = interface.ifa_name,
+               address.pointee.sa_family == UInt8(AF_INET) {
+                let name = String(cString: namePointer)
+                if name == "en0" || name.hasPrefix("en") || name.hasPrefix("bridge") {
+                    var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+                    let result = getnameinfo(
+                        address,
+                        socklen_t(address.pointee.sa_len),
+                        &hostname,
+                        socklen_t(hostname.count),
+                        nil,
+                        0,
+                        NI_NUMERICHOST
+                    )
+                    if result == 0 {
+                        let ip = String(cString: hostname)
+                        if !ip.isEmpty, ip != "0.0.0.0" {
+                            candidates.append(ip)
                         }
                     }
                 }
